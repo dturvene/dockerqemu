@@ -11,7 +11,7 @@
 #
 # These assume inside docker container:
 #  docker_t: confirm program versions in container
-#  qemu x86_bld: configure and make (wrapper for meson) a qemu_system-x86_64 image
+#  qemu_x86_bld: configure and make (wrapper for meson) a qemu_system-x86_64 image
 #  qemu_x86_bld_check:
 #  qemu_x86_start_cmd: start a qemu guest using commandline args
 #  qemu_x86_start_cfg: start a qemu guest using (mostly) a configuration file
@@ -195,18 +195,21 @@ docker_t()
 
     echo "See qemu.Dockerfile for installed debian packages"
 
-    echo "python 3.7+"
+    echo "CHECK python 3.7+"
     python --version
 
-    echo "pip 22.3+ for python 3.7"
+    echo "CHECK pip 22.3+ for python 3.7"
     pip --version
 
-    echo "meson python package, should be > 1.0"
+    echo "CHECK meson python package, should be > 1.0"
     meson --version
 
-    if [ -f $Q_P ]; then
-	echo "check qemu version, should be > 7.1"
+    echo "CHECK qemu version, should be > 7.1"
+    if [ -n "$Q_P" -a -f $Q_P ]; then
 	$Q_P --version
+    else
+	echo "NOT FOUND: Q_P=$Q_P"
+	echo "may need to run qemu_x86_bld and "
     fi
 }
 
@@ -239,7 +242,6 @@ qemu_x86_bld()
     fi
 }
 
-
 qemu_x86_bld_check()
 {
     in_container
@@ -260,8 +262,12 @@ qemu_x86_bld_check()
 
 qemu_x86_install()
 {
+    in_container
+
+    cd $Q_TOP
     sudo make install
 
+    echo "Check installed version"
     $Q_P --version
 }
 
@@ -288,9 +294,8 @@ d11_cloud_c()
     # cloud-init schema --config-file user-data.yaml
 
     echo "create seed.img for VM: user-data.yaml, metadata.yaml"
-    # cloud-localds seed.img user-data.yaml metadata.yaml
-    cloud-localds seed.img user-ex.yaml
-
+    cloud-localds seed.img user-data.yaml metadata.yaml
+    
     qemu-img info seed.img
     
 }
@@ -358,13 +363,13 @@ qemu_mon_cmds()
 }
 
 # 
-docker_qemu_conn()
+docker_qemu_ssh_conn()
 {
 
     # start a second docker shell: docker_conn_shell
 
     # ssh to qemu cloud image
-    ssh -p 10022 -i /home/work/id_rsa.qemu dturvene@localhost
+    ssh -p 10022 -i /home/work/id_rsa.dummy dturvene@localhost
 
 }
 

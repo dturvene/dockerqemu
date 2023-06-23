@@ -16,7 +16,7 @@ users:
     groups: users
     shell: /bin/bash
     ssh_authorized_keys:
-      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDgQS9Co9dP2i0muHKPiLXlj+4q8JAx1dD/c1oTdMAMjVW9CoOVVu9t0SbQn3flwyRBwuKAO29/jMVF3rM+yW/RUIyeXaOPJ6F6CmBQz6XWrtHREjV5dXk/O++Mi7yube+mgYU+aHfXItFF6pbgFsLr9lJowPxQK8uiu9w7NwGCJnSdeUrqT6tPXKm/ghCYSnhSKcxqgq1/8Z8pi9zB0boIMOgxS8BG4abEPnihxjiIpgQd8WHsbl1/rxLAiOgml17FYQAb4RWQAhnmwEXrcRlR11lPins8LllGsGn8zuOzoOvszeNOogXpLTKs4Cl12CbZLWNGwzyKTBIAZSqgAO//
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCv0x11C/IQbDWhzNihkl9qFBzyquAGPvzauqohxneP1OOxwKWrvvRYPbY/Oj0QnTWAImyprJNNqMJQrilugAVD09YapbpwLtyhheMVfo/b5Wi1EqRqDnm5WD3XNE1JNRC1coDc9GVDT7DBZZvQKs+k2IoP2An8yMY+hKtRcj0vpj67ncw3F/Gk+TRdl/KMABhKik1ZkVGk1QxInGMzFrrRREZXIYmhkQwQIWQzWqo7Vsu4Dow+TU0ycn+6lNaX4TMETt5ScT6/a1YxDquAlq8Wv10NUXBUdgW3ZJlCCauLOkH9b2udARx8IspVq2+hUdIn9bdxCQP5RaOG+0qUdwrv
     sudo: ALL=(ALL) NOPASSWD:ALL
   - name: dave
     gecos: console super
