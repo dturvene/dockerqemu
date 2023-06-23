@@ -1,0 +1,50 @@
+#cloud-config
+# https://cloudinit.readthedocs.io/en/20.2/topics/examples.html
+#
+# users name must be dturvene for the SSH pubkey (id_rsa.qemu)
+# validation test:
+#  cloud-init schema --config-file user-data.yaml
+
+groups:
+  - cloud-group: [root,sys]
+  - cloud-users
+
+users:
+  - name: dturvene
+    gecos: David Turvene
+    primary_group: dturvene
+    groups: users
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDgQS9Co9dP2i0muHKPiLXlj+4q8JAx1dD/c1oTdMAMjVW9CoOVVu9t0SbQn3flwyRBwuKAO29/jMVF3rM+yW/RUIyeXaOPJ6F6CmBQz6XWrtHREjV5dXk/O++Mi7yube+mgYU+aHfXItFF6pbgFsLr9lJowPxQK8uiu9w7NwGCJnSdeUrqT6tPXKm/ghCYSnhSKcxqgq1/8Z8pi9zB0boIMOgxS8BG4abEPnihxjiIpgQd8WHsbl1/rxLAiOgml17FYQAb4RWQAhnmwEXrcRlR11lPins8LllGsGn8zuOzoOvszeNOogXpLTKs4Cl12CbZLWNGwzyKTBIAZSqgAO//
+    sudo: ALL=(ALL) NOPASSWD:ALL
+  - name: dave
+    gecos: console super
+    primary_group: users
+    plain_text_passwd: 'dave'
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+  - name: user1
+    gecos: Dummy User 1
+    primary_group: users
+    plain_text_passwd: 'user1'
+    sudo: false
+    shell: /bin/bash
+
+# https://cloudinit.readthedocs.io/en/20.4/topics/modules.html#set-passwords
+chpasswd:
+  list: |
+    user1:user1
+    dave:dave
+  expire: False
+
+# APT package section
+# https://cloudinit.readthedocs.io/en/20.4/topics/examples.html#yaml-examples
+# https://cloudinit.readthedocs.io/en/20.4/topics/modules.html#package-update-upgrade-install
+package_update: true
+packages:
+  - emacs-nox
+  - build-essential
+
+runcmd:
+  - [ timedatectl set-timezone America/New_York ]

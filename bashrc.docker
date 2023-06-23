@@ -1,0 +1,37 @@
+#!/bin/bash
+# This replaces the standard user .bashrc copied from /etc/skel/.bashrc
+LOG=/tmp/setup.log
+
+grep docker /proc/1/cgroup >> $LOG
+if [ $? != 0 ]; then
+    echo "NOT IN CONTAINER"
+    exit -1
+fi
+
+[ -z "$PS1" ] && return
+
+shopt -s checkwinsize
+
+# simple bash prompt
+export PS1='\u:\!> '
+export TERM=linux
+echo -e "\e[m"
+
+alias h="history"
+
+# set PATH so it includes user's private bin if it exists
+if [ -d "$HOME/.local/bin" ] ; then
+    PATH="$HOME/.local/bin:$PATH"
+fi
+
+# display system identification when entering bash
+echo "Entering $PWD"
+printf "debian ver:%s\n" $(cat /etc/debian_version)
+printf "hostname:%s\n" $(cat /etc/hostname)
+cat /proc/version
+
+
+
+
+
+
