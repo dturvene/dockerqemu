@@ -5,18 +5,20 @@
 # Run this bash script with no arguments to show available functions
 #
 # Docker management functions
-#  docker_c: create the $IMG_TAG container image
-#  docker_r: launch the $IMG_TAG container with desired arguments
-#  docker_d: destroy $IMG_TAG
+#  docker_c: create the $D_IMG container image
+#  docker_r: launch the $D_IMG container with desired arguments
+#  docker_d: destroy $D_IMG
 #
 # These assume inside docker container:
 #  docker_t: confirm program versions in container
-#  qemu_x86_bld: configure and make (wrapper for meson) a qemu_system-x86_64 image
-#  qemu_x86_bld_check:
-#  qemu_x86_start_cmd: start a qemu guest using commandline args
-#  qemu_x86_start_cfg: start a qemu guest using (mostly) a configuration file
+#  q_p_bld: configure and make (wrapper for meson) a qemu_system-x86_64 image
+#  q_p_bld_check: verify qemu support, option to run unit test suite
+#  q_p_install: install qemu (location in q_p_bld)
+#  qemu_run_args: launch a qemu VM using commandline args
+#  qemu_run_cfg: launc a qemu VM using (mostly) a configuration file
 #
-# These assume inside qemu guest:
+# These assume inside qemu guest VM:
+#  qemu_check: verify tools in VM
 
 
 # NOTE: A lot of this is boilerplate
@@ -45,10 +47,11 @@ usage() {
 
 parseargs() {
 
-    while getopts "l:h" Option
+    # make sure the string of options is accurate, otherwise weirdness
+    while getopts ":lh" Option
     do
 	case $Option in
-	    l ) CMD_LONG="1";;
+	    l ) echo "setting"; CMD_LONG="1";;
 	    h | * ) usage
 		exit 1;;
 	esac
@@ -106,34 +109,32 @@ set_env() {
 
     echo "Loading additional $0 environment variables"
 
+    # qemu inside container
     export Q_P=/usr/local/bin/qemu-system-x86_64
     export Q_TOP=/home/qemu.git
+
+    # container image on host
+    export D_IMG=dockerqemu
     
-    printenv | egrep "^Q_"
+    printenv | egrep "^Q_|^D_"
 }
 
 ###########################################
 # Operative functions
 ###########################################
-init() {
-
-    # generic initialization function, change as necessary
-    echo "placeholder"
-
-}
 
 # Create docker image
 docker_c()
 {
     DFILE=qemu.Dockerfile
-    if [ -z $IMG_TAG ]; then
+    if [ -z $D_IMG ]; then
 	echo "No Docker Image Tag set"
 	exit
     fi
 
-    echo "$PWD: CREATE Docker=$DFILE with IMG_TAG=$IMG_TAG"
+    echo "$PWD: CREATE Docker=$DFILE with D_IMG=$D_IMG"
     t_prompt
-    docker build -f $DFILE -t $IMG_TAG .
+    docker build -f $DFILE -t $D_IMG .
 
     # check images
     docker images
@@ -148,10 +149,10 @@ docker_c()
 # Launch docker image
 docker_r()
 {
-    echo "$PWD: run IMG_TAG=$IMG_TAG using $PWD as /home/work"
-    if [ -z $IMG_TAG ]; then
-	export IMG_TAG="dockerqemu:latest"
-	echo "No Docker IMG_TAG, setting to $IMG_TAG"
+    echo "$PWD: run D_IMG=$D_IMG using $PWD as /home/work"
+    if [ -z $D_IMG ]; then
+	export D_IMG="dockerqemu:latest"
+	echo "No Docker D_IMG, setting to $D_IMG"
     fi
 
     # mount the local drive as /home/work
@@ -162,7 +163,7 @@ docker_r()
 	   --volume="$PWD:/home/work" \
 	   --volume="/opt/distros/qemu.git:/home/qemu.git" \
 	   --workdir=/home/work \
-	   --rm -it $IMG_TAG
+	   --rm -it $D_IMG
 
 }
 
@@ -177,14 +178,16 @@ docker_conn_shell()
 
 docker_d()
 {
-    if [ -z $IMG_TAG ]; then
-	echo "No Docker IMG_TAG"
+    if [ -z $D_IMG ]; then
+	echo "No Docker D_IMG"
 	exit -1
     fi
 
-    # blow away $IMG_TAG and start fresh
-    docker rmi $IMG_TAG
+    echo "blow away docker image D_IMG=$D_IMG ?"
+    t_prompt
+    docker rmi $D_IMG
 
+    echo "current docker images"
     docker images
 }
 
@@ -209,13 +212,13 @@ docker_t()
 	$Q_P --version
     else
 	echo "NOT FOUND: Q_P=$Q_P"
-	echo "may need to run qemu_x86_bld and "
+	echo "may need to run q_p_bld "
     fi
 }
 
 # https://stackoverflow.com/questions/75641274/network-backend-user-is-not-compiled-into-this-binary
 # https://wiki.qemu.org/ChangeLog/7.2#Removal_of_the_%22slirp%22_submodule_(affects_%22-netdev_user%22)
-qemu_x86_bld()
+q_p_bld()
 {
     cd $Q_TOP
     
@@ -242,7 +245,7 @@ qemu_x86_bld()
     fi
 }
 
-qemu_x86_bld_check()
+q_p_bld_check()
 {
     in_container
 
@@ -255,12 +258,13 @@ qemu_x86_bld_check()
     ldd build/x86_64-softmmu/qemu-system-x86_64
 
     if [ -n "$CMD_LONG" ]; then
-	echo "running make check, long ~340 test scripts..."
-	# make check
+	echo "START qemu unit tests, ~350 test scripts..."
+	t_prompt
+	make check
     fi
 }
 
-qemu_x86_install()
+q_p_install()
 {
     in_container
 
@@ -273,7 +277,7 @@ qemu_x86_install()
 
 # https://cloudinit.readthedocs.io/en/20.2/
 # https://cloudinit.readthedocs.io/en/20.2/topics/debugging.html
-d11_cloud_c()
+qemu_get_debian_cloud()
 {
     in_container
     
@@ -281,10 +285,13 @@ d11_cloud_c()
     
     DEB_DISTRO=debian-11-genericcloud-amd64.qcow2
     DEB_IMG=d11-test.qcow2 
-    
-    wget https://cloud.debian.org/images/cloud/bullseye/latest/$DEB_DISTRO
 
-    # create snapshot
+    if [ ! -f $DEB_DISTRO ]; then
+	echo "get $DEB_DISTRO"
+	wget https://cloud.debian.org/images/cloud/bullseye/latest/$DEB_DISTRO
+    fi
+
+    echo "create a local copy that will be modified when a qemu_run function is called"
     qemu-img convert -f qcow2 -O qcow2 $DEB_DISTRO $DEB_IMG 
 
     qemu-img info $DEB_IMG
@@ -296,14 +303,13 @@ d11_cloud_c()
     echo "create seed.img for VM: user-data.yaml, metadata.yaml"
     cloud-localds seed.img user-data.yaml metadata.yaml
     
-    qemu-img info seed.img
-    
+    qemu-img info seed.img   
 }
 
 #
-qemu_x86_start_cmd()
+qemu_run_args()
 {
-    echo "Starting QEMU session using cmdline..."
+    echo "Starting QEMU session using commandline args..."
 
     NET_Q35="-netdev id=net0,type=user,hostfwd=tcp::10022-:22 -device virtio-net-pci,netdev=net0"
     # qemu-system-x86_64: -netdev id=net0,type=user,hostfwd=tcp::10022-:22:
@@ -319,7 +325,7 @@ qemu_x86_start_cmd()
 
 }
 
-qemu_x86_start_cfg()
+qemu_run_cfg()
 {
     echo "Starting QEMU session using local configuration file..."
 
@@ -337,18 +343,21 @@ qemu_x86_start_cfg()
 
 }
 
-qemu_x86_regtest()
+qemu_check()
 {
     # login as dave:dave
 
-    # check ssh
+    # check sshd is running
     ps -aux | grep ssh
 
     # listening on port 22
     netstat -tuln
 
-    # enter monitor
-    # mon> info usernet
+    # ^A-c toggle to monitor and check TCP 10022->22 port fwd
+    # (qemu) info usernet
+
+    # from host: second docker term and ssh to qemu VM
+    ./bashlib.sh docker_conn_shell
 
 }
 
@@ -362,6 +371,29 @@ qemu_mon_cmds()
 
 }
 
+# create a dummy SSH keypair
+gen_sshkey()
+{
+    SSH_KEY=id_qemu_dummy.key
+
+    # enter github repo
+
+    # -f file: output keyfile name
+    # -v: verbose mode
+    # -t rsa: type of key to create
+    ssh-keygen -f ./$SSH_KEY -v -t rsa
+    # no passphrase
+    # creates files: $SSH_KEY and $SSH_KEY.pub
+
+    ls -l $SSH_KEY*
+    
+    # paste $SSH_KEY.pub into user-data.yaml users:dave ssh_authorization_keys
+    # NOTE: need to rebuild
+    # quick fix in VM: overwrite /home/dave/.ssh/authorized_keys with new pub key
+    # qemu> echo ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCu8+8x4Ujk4J+syoJqN+ye7quLZeHZmi5DVialS99Lqi7BfSrPzOmJtPnYu0pkEVLsFvCfiMvkGgZkqqj+80mByO0Dos+H2UB0zHWgZI5nd1WQhb4AY8SOaGOpE1lY3KyhNCsbHBNSGUrBhan0SFJ8MQuZ3FqPGOG9qXv8CbLlmOpDxmLPCSupFod7HdfodNOgUrlwoSlyKA0pbgFuqEP9uTwyhpaOazfKQbZGOuUhO5wwM8GFBWuyWarqv9YyYJpf8akNfeiZ9rBttC8XT8wrmiElRqr5XHvMFNpzt7fR0BLCcg4qiuFttuNJiyxQPq3dCHvY+pYu7LP0tzelW/Mr > /home/dave/.ssh/authorized_keys
+    
+}
+
 # 
 docker_qemu_ssh_conn()
 {
@@ -369,8 +401,54 @@ docker_qemu_ssh_conn()
     # start a second docker shell: docker_conn_shell
 
     # ssh to qemu cloud image
-    ssh -p 10022 -i /home/work/id_rsa.dummy dturvene@localhost
+    ssh -p 10022 -i /home/work/id_qemu_dummy.key dave@localhost
+    # if connect fails:
+    #  in docker check id_qemu_dummy.key.pub
+    #  in qemu console confirm /home/dave/.ssh/authentication matches the pubkey
 
+}
+
+####################################################################
+bld_all()
+{
+
+    ########### host bash #########
+
+    # set env for building docker container
+    . ./bashlib.sh set_env
+
+    # create docker image
+    ./bashlib.sh docker_c
+
+    # enter docker container
+    ./bashlib.sh docker_r
+
+    ########### docker container #########
+
+    # set env for building/running qemu
+    . ./bashlib.sh set_env
+
+    # verify necessary execs in container
+    ./bashlib.sh docker_t
+
+    # build qemu
+    ./bashlib.sh q_p_bld
+
+    # check qemu
+    # -l runs all the unit tests, LONG recommended on initial qemu build and upgrades
+    # ./bashlib -l q_p_bld_check
+    ./bashlib.sh q_p_bld_check
+
+    ./bashlib.sh q_p_install
+
+    # recreate debian cloud VM from scratch
+    ./bashlib.sh qemu_get_debian_cloud
+
+    ########### container: enter qemu guest ################
+    ./bashlib.sh qemu_run_args
+
+    ./bashlib.sh qemu_check
+    
 }
 
 ###########################################

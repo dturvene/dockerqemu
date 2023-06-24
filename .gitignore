@@ -5,12 +5,13 @@
 # ignore all
 *
 
-# unignore file extensions
+# unignore only versioned file extensions
 !*.md
 !*.sh
 !*.Dockerfile
 !*.yaml
-!*.qemu
+!*.key
+!*.key.pub
 !*.docker
 
 # unignore git support

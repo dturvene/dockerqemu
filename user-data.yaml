@@ -1,29 +1,20 @@
 #cloud-config
 # https://cloudinit.readthedocs.io/en/20.2/topics/examples.html
 #
-# users name must be dturvene for the SSH pubkey (id_rsa.qemu)
-# validation test:
-#  cloud-init schema --config-file user-data.yaml
 
 groups:
   - cloud-group: [root,sys]
   - cloud-users
 
 users:
-  - name: dturvene
-    gecos: David Turvene
-    primary_group: dturvene
-    groups: users
-    shell: /bin/bash
-    ssh_authorized_keys:
-      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCv0x11C/IQbDWhzNihkl9qFBzyquAGPvzauqohxneP1OOxwKWrvvRYPbY/Oj0QnTWAImyprJNNqMJQrilugAVD09YapbpwLtyhheMVfo/b5Wi1EqRqDnm5WD3XNE1JNRC1coDc9GVDT7DBZZvQKs+k2IoP2An8yMY+hKtRcj0vpj67ncw3F/Gk+TRdl/KMABhKik1ZkVGk1QxInGMzFrrRREZXIYmhkQwQIWQzWqo7Vsu4Dow+TU0ycn+6lNaX4TMETt5ScT6/a1YxDquAlq8Wv10NUXBUdgW3ZJlCCauLOkH9b2udARx8IspVq2+hUdIn9bdxCQP5RaOG+0qUdwrv
-    sudo: ALL=(ALL) NOPASSWD:ALL
   - name: dave
     gecos: console super
     primary_group: users
     plain_text_passwd: 'dave'
     sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
+    ssh_authorized_keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCu8+8x4Ujk4J+syoJqN+ye7quLZeHZmi5DVialS99Lqi7BfSrPzOmJtPnYu0pkEVLsFvCfiMvkGgZkqqj+80mByO0Dos+H2UB0zHWgZI5nd1WQhb4AY8SOaGOpE1lY3KyhNCsbHBNSGUrBhan0SFJ8MQuZ3FqPGOG9qXv8CbLlmOpDxmLPCSupFod7HdfodNOgUrlwoSlyKA0pbgFuqEP9uTwyhpaOazfKQbZGOuUhO5wwM8GFBWuyWarqv9YyYJpf8akNfeiZ9rBttC8XT8wrmiElRqr5XHvMFNpzt7fR0BLCcg4qiuFttuNJiyxQPq3dCHvY+pYu7LP0tzelW/Mr
   - name: user1
     gecos: Dummy User 1
     primary_group: users
