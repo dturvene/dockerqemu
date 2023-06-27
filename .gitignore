@@ -8,11 +8,13 @@
 # unignore only versioned file extensions
 !*.md
 !*.sh
+!env_vars
 !*.Dockerfile
 !*.yaml
 !*.key
 !*.key.pub
 !*.docker
+!*.cfg
 
 # unignore git support
 !.gitignore

@@ -33,7 +33,7 @@ CMD_LONG=""
 usage() {
 
     if [ -z "$Q_TOP" ]; then
-        printf "\nmust run '. ./bashlib.sh set_env' to set environment variables in this shell\n"
+        printf "\nmust run '. ./env_vars' to set environment variables in this shell\n"
     fi
 
     printf "\nUsage: $0 [options] func [func]+"
@@ -84,7 +84,7 @@ trapexit() {
 # check if inside a container
 in_container()
 {
-    echo "Check in the docker container"
+    echo "Verify in the docker container"
     
     grep -q docker /proc/1/cgroup
     if [ $? != 0 ]; then
@@ -102,22 +102,6 @@ in_container()
 ###########################################
 # Setup
 ###########################################
-
-# set helper environment
-# . ../work/bashlib.sh set_env
-set_env() {
-
-    echo "Loading additional $0 environment variables"
-
-    # qemu inside container
-    export Q_P=/usr/local/bin/qemu-system-x86_64
-    export Q_TOP=/home/qemu.git
-
-    # container image on host
-    export D_IMG=dockerqemu
-    
-    printenv | egrep "^Q_|^D_"
-}
 
 ###########################################
 # Operative functions
@@ -155,13 +139,21 @@ docker_r()
 	echo "No Docker D_IMG, setting to $D_IMG"
     fi
 
+    KVM_GROUP=130
+
     # mount the local drive as /home/work
+    # mount the host qemu git clone
+    #  --device: map the host /dev/kvm device
+    #  --group-add: add the host KVM group to user
+    #  --workdir: the current directory with this script
     #  --rm: remove container on exit
     #  -i: interactive, keep STDIN open
     #  -t: allocate a psuedo-tty
     docker run \
 	   --volume="$PWD:/home/work" \
 	   --volume="/opt/distros/qemu.git:/home/qemu.git" \
+	   --device=/dev/kvm \
+	   --group-add $KVM_GROUP \
 	   --workdir=/home/work \
 	   --rm -it $D_IMG
 
@@ -174,6 +166,20 @@ docker_conn_shell()
     export CID=$(docker ps -q)
     echo "$CID: enter bash shell"
     docker exec -it $CID bash
+}
+
+docker_u()
+{
+    echo "update docker image"
+
+    # get all running containers
+    docker ps
+    CID=4d573b1640b0
+
+    # create a new image from the container id
+    docker commit -m "add qemu build" $CID dockerqemu:latest
+
+    docker images
 }
 
 docker_d()
@@ -216,27 +222,37 @@ docker_t()
     fi
 }
 
-# https://stackoverflow.com/questions/75641274/network-backend-user-is-not-compiled-into-this-binary
+# https://www.qemu.org/download/
+#  instructions to clone qemu gitlab repo
 # https://wiki.qemu.org/ChangeLog/7.2#Removal_of_the_%22slirp%22_submodule_(affects_%22-netdev_user%22)
+#  new instructions for slirp interface
 q_p_bld()
 {
     cd $Q_TOP
-    
+
+    # checkout desired tag
+    # git checkout v8.0.2 -b tag8.0.2
+    #git branch
+    #echo "Desired qemu branch to configure and make?"
+    #t_prompt
+
+    QEMU_CONFIG_LOG=/home/work/LOG.CONFIG.QEMU
     # if feature exists it will be automatically be enabled
     # post 7.1, slirp is a separate project so need to explicitly enable
-    echo "Configuring build..."
+    echo "Configuring build, see $QEMU_CONFIG_LOG"
     ./configure \
  	--prefix=/usr/local \
 	--target-list=x86_64-softmmu \
 	--enable-debug \
 	--enable-slirp \
-	| tee /home/work/LOG.CONFIG.QEMU
+	| tee $QEMU_CONFIG_LOG
 
     # if configure fails, check the meson log
     if [ $? != 0 ]; then	
 	cat build/meson-logs/meson-log.txt
     fi
 
+    echo "build $Q_P using 'make -j8'"
     time make -j8
 
     # if make fails...
@@ -251,11 +267,19 @@ q_p_bld_check()
 
     cd $Q_TOP
     date
-    ls -l ./build/x86_64-softmmu/qemu-system-x86_64
 
-    ./build/x86_64-softmmu/qemu-system-x86_64 --version
+    Q_P_BLD=./build/x86_64-softmmu/qemu-system-x86_64
 
-    ldd build/x86_64-softmmu/qemu-system-x86_64
+    if [ ! -f $Q_P_BLD ]; then
+	echo "No $Q_P executable"
+	exit -1
+    fi
+
+    echo "Check qemu version"
+    $Q_P_BLD --version
+
+    echo "check shared libraries"
+    ldd $Q_P_BLD
 
     if [ -n "$CMD_LONG" ]; then
 	echo "START qemu unit tests, ~350 test scripts..."
@@ -275,8 +299,17 @@ q_p_install()
     $Q_P --version
 }
 
-# https://cloudinit.readthedocs.io/en/20.2/
-# https://cloudinit.readthedocs.io/en/20.2/topics/debugging.html
+# Get a Debian generic cloud image built for QEMU from
+#  https://cloud.debian.org/images/cloud/
+# 
+# Use canonical cloud-init to provision the generic image on
+# first boot:
+#  https://cloudinit.readthedocs.io/en/20.2/
+#  https://cloudinit.readthedocs.io/en/20.2/topics/debugging.html
+#
+# See user-data.yaml, metadata.yaml to customize the
+# debian guest image.  Any changes to these files
+# will need to be run on an original cloud image ($DEB_DISTRO)
 qemu_get_debian_cloud()
 {
     in_container
@@ -306,18 +339,17 @@ qemu_get_debian_cloud()
     qemu-img info seed.img   
 }
 
-#
 qemu_run_args()
 {
     echo "Starting QEMU session using commandline args..."
 
     NET_Q35="-netdev id=net0,type=user,hostfwd=tcp::10022-:22 -device virtio-net-pci,netdev=net0"
-    # qemu-system-x86_64: -netdev id=net0,type=user,hostfwd=tcp::10022-:22:
-    # slirp
-    #   network backend 'user' is not compiled into this binary
     VGA="-nographic"
-
-    $Q_P -m 1G \
+    MACH="-machine q35,accel=kvm,usb=off"
+    MEM="-m 1G"
+    CPU="-cpu host -smp 4,sockets=2,cores=2,threads=1"
+    
+    $Q_P $MACH $CPU $MEM \
 	 -drive file=d11-test.qcow2,if=virtio,format=qcow2 \
 	 -drive file=seed.img,if=virtio,format=raw \
 	 $NET_Q35 \
@@ -327,19 +359,25 @@ qemu_run_args()
 
 qemu_run_cfg()
 {
-    echo "Starting QEMU session using local configuration file..."
+    echo "Starting QEMU session from configuration file..."
+    CFG=d11-guest.cfg
 
-    NET_Q35="-netdev id=net0,type=user,hostfwd=tcp::10022-:22 -device virtio-net-pci,netdev=net0"
-    # qemu-system-x86_64: -netdev id=net0,type=user,hostfwd=tcp::10022-:22:
-    # slirp
-    #   network backend 'user' is not compiled into this binary
-    VGA="-nographic"
+    # $CFG has a [device "video"] section to create a QXL window
 
-    $Q_P -m 1G \
-	 -drive file=d11-test.qcow2,if=virtio,format=qcow2 \
-	 -drive file=seed.img,if=virtio,format=raw \
-	 $NET_Q35 \
-	 $VGA
+    # default connects to x11 server, disable this
+    DISP="-display none"
+
+    # write console to a log file
+    # DBG_LOG="-serial file:${D_WORK}/d11_readcfg.log"
+
+    # 
+    MON="-serial mon:stdio -monitor"
+
+    # shell on console
+    # CONSOLE="-serial stdio"
+
+    $Q_P -nodefaults -readconfig ${CFG} \
+	 $DBG_LOG $DISP -serial mon:stdio
 
 }
 
@@ -368,7 +406,6 @@ qemu_mon_cmds()
     # mon> quit
 
     echo "VM monitor"
-
 }
 
 # create a dummy SSH keypair
@@ -415,7 +452,7 @@ bld_all()
     ########### host bash #########
 
     # set env for building docker container
-    . ./bashlib.sh set_env
+    . ./env_vars
 
     # create docker image
     ./bashlib.sh docker_c
@@ -426,7 +463,7 @@ bld_all()
     ########### docker container #########
 
     # set env for building/running qemu
-    . ./bashlib.sh set_env
+    . ./env_vars
 
     # verify necessary execs in container
     ./bashlib.sh docker_t

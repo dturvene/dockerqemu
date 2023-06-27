@@ -26,6 +26,7 @@ RUN apt-get update --fix-missing && \
 	    wget ssh \
 	    cloud-image-utils cloud-init \
 	    build-essential \
+	    git \
     	    sudo \
 	    pkg-config \
 	    libgtk-3-dev \
