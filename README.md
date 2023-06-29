@@ -1,5 +1,7 @@
-[com1]: # Create a local html for proof, format and hyperlink review
-[com2]: # host> pandoc --metadata pagetitle=docker-qemu -f markdown -s README.md -o README.html
+<!--
+Create a local html for proof, format and hyperlink review
+host> pandoc --metadata pagetitle=docker-qemu -f markdown -s README.md -o README.html
+-->
 
 Abstract
 ========
