@@ -25,9 +25,6 @@ if [ -d "$HOME/.local/bin" ] ; then
     PATH="$HOME/.local/bin:$PATH"
 fi
 
-echo "test"
-echo "Enter $PWD"
-
 # display system identification when entering bash
 echo "Entering $PWD"
 printf "debian ver:%s\n" $(cat /etc/debian_version)

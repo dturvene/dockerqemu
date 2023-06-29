@@ -3,57 +3,193 @@
 
 Abstract
 ========
+I work on [QEMU](https://www.qemu.org/) a good bit, mostly full system
+emulation but, at times, also user space (for example,
+cross-compiling). Why [QEMU]()?  As I have said in previous articles, the big
+advantage of using QEMU is the guest can be spun-up and provisioned quickly,
+allowing for rapid prototyping.
 
-* [Docker](https://www.docker.com/) container
-* [QEMU](https://www.qemu.org/) full system emulator, 
-  using the [KVM](https://www.linux-kvm.org/page/Main_Page) hypervisor
-  (also known as a VM accelerator)
-* [Debian Linux](https://www.debian.org/) guest OS
+[QEMU]() has evolved quickly and now requires specific
+versions of the [meson](https://mesonbuild.com/) build system, python-3 and
+python-3 packages along with a compiler toolchain and linker shared objects.
+The problem I increasingly encounter is keeping all the dependency
+packages consistent and up-to-date without breaking utilities on my host
+system - a Dell Intel laptop running [Ubuntu Linux](https://ubuntu.com/).
 
-The docker container holds a recent [Debian Linux]() image with all the
-necessary tools to build and run the [QEMU]() full system emulator.  In turn
-QEMU drives a Debian Linux generic cloud image
+The solution I settled on is to create a 
+[docker](https://www.docker.com/) container with all the package
+versions to build from a git repo and manage [QEMU]().  I run the container
+with my QEMU and devel repos as volumes, with the option to map the host
+[KVM](https://www.linux-kvm.org/page/Main_Page) device for hypervisor access.
+*THEN* I can run a large number of possible guests inside [QEMU]() including
+linux distros, MS windows distros, android on a variety of architectures x86,
+arm, aarch64.
 
-Functional Requirements
-=======================
-
-Development environment
-* portable
-* stable
-* flexible
-* repeatable
+The list of advantages of the docker QEMU framework over a host running QEMU
+include:
+* the docker container has one mission: QEMU support. All packages are
+  groomed to that mission,
+* QEMU and a guest OS can be created, updated, run and destroyed fairly quickly,
+* the docker container can be easily modified and re-created to incorporate new 
+  [QEMU]() and guest OS features.
+  
+Essentially I am working in a QEMU-specific sandbox.  If something goes wrong I 
+can blow away the docker image, QEMU executable, or the guest OS image and
+quickly rebuild.
 
 Functional Overview
 ===================
-This project has three major components:
-* a docker container
-* a qemu 
+This document (and git repo) demonstrates booting, provisioning and managing:
 
-Docker
-------
+* [docker]() container running [Debian Linux](https://www.debian.org/) with all
+  the necessary support packages for [QEMU](),
+* [QEMU]() git source volume build and install inside the container,
+* [Debian Linux Cloud](https://cloud.debian.org/images/cloud/) cloud image
+  running in the [QEMU]() full emulator.  This could be any `rootfs` including
+  MS Windows; I chose a recent Debian cloud image for simplicity.
 
-QEMU VM
--------
+There are several operational features to note:
 
-QEMU Guest Image
-----------------
+* The [Debian Linux Cloud]() image is provisioned with
+  [Cloud Init](https://cloudinit.readthedocs.io/en/20.2/)
+  yaml files.  This is a well documented and cleaner
+  alternative to the 
+  [Debian preseed](https://wiki.debian.org/DebianInstaller/Preseed) framework.
+* [QEMU]() can be run using the [KVM](https://www.linux-kvm.org/page/Main_Page)
+  hypervisor (also known as a VM accelerator) or the 
+  [TCG](https://wiki.qemu.org/Documentation/TCG)
+* [QEMU]() can be launched using all command line arguments or with a 
+  `QEMU device configuration file`.  There is very little documentation on
+  these files other than some examples in the QEMU source tree.
+* `bashlib.sh` contains a library of bash functions to manage/test docker,
+  build/manage/test a QEMU executable and finally download, init and launch the
+  Debian cloud image.
+  
+As I said, my host system is a Dell laptop running a [Ubuntu Linux](), which is 
+a derivative of [Debian Linux]().  However, using `bashlib.sh` for example step,
+almost any platform should be capable of generating the docker image and then
+building QEMU. I thought about using the container to clone the QEMU git repo
+but then decided I wanted to do that step on the host.
 
 File Descriptions
 =================
+All files are in this https://github.com/dturvene/dockerqemu github repo.
+
 * README.md: this file
 * bashlib.sh: library of bash scripts for running docker container and qemu image
 * env_vars: bash source file to set environment variables used in `bashlib.sh`
 * qemu.Dockerfile: dockerfile to create the docker image
 * bashrc.docker: custom bashrc copied to docker image (see `qemu.Dockerfile`)
-* user-data.yaml
-* metadata.yaml 
+* metadata.yaml: [Cloud Init]() system file defining the guest id and hostname
+* user-data.yaml: [Cloud Init]() user file defining user groups, users, debian
+  packages and ancillary initialization commands
 * `id_qemu_dummy.key`: example RSA PKE file for ssh access to QEMU guest VM
 
-Additionally some files and directories are created:
+Additionally some files and directories are dynamically created:
 * `$Q_P` is generated by `bashlib.sh:q_p_bld`. The `qemu.git` repo is assumed
-  to be cloned and branched on a tag.
+  to be cloned and a the desired tag is branched (outside the scope of this
+  doc).  The repo is resident on the host and mounted as docker volume by
+  `bashlib.sh:docker_r`.
 * The desired debian generic cloud image will be pulled from the official
   debian site by `bashlib.sh:qemu_get_debian_cloud` and converted to a local
   copy.
-* See `bashlib.sh` for log files including LOG.CONFIG.QEMU and
-  $Q_TOP/build/meson-logs/meson-log.txt
+* See `bashlib.sh` for the use and location of progress log files including
+  `LOG.CONFIG.QEMU` and `$Q_TOP/build/meson-logs/meson-log.txt`
+
+Functional Details
+==================
+In `bashlib.sh:bld_all` there is a rough template for the necessary steps to
+create a docker/QEMU/Debian guest OS platform. It will need to be modified
+depending on your host platform, capabilities, and directory locations.
+
+The template assumes this directory has been man:git-clone locally and a recent
+qemu source tree has been man:git-clone locally, branched and cleaned of prior
+builds.
+
+Briefly, here are the steps using a man:bash shell *for a first time run*
+
+Host
+----
+Create a docker image and then create a running container.  See `env_vars`,
+`qemu.Dockerfile` and `bashrc.docker` to customize the docker container.
+
+Docker Container
+----------------
+First, test the docker container for the necessary packages 
+(see `bashlib.sh:docker_check`). 
+
+Note that a docker container *can* access the host X11 window manager for
+creating windows in the container.  I have found this to be more trouble than
+worth. However, I enjoy having multiple shells connected to the container
+(see`bashlib.sh:docker_conn_shell`.) 
+
+The first major step in the container is to configure and build QEMU in the
+mapped docker volume. See `bashlib.sh:q_p_bld` for configuring and making the
+QEMU executable. Check that QEMU is built correctly using 
+`bashlib.sh:q_p_bld_check`. This function has a command line option `CMD_LONG`
+to run the QEMU test scripts which takes about 15 minutes.
+
+If the QEMU executable is fully functional then use `bashlib.sh:q_p_install` to
+install the components in the container. I used the `/usr/local` prefix to
+install under (which requires `sudo`).
+
+QEMU Guest OS
+-------------
+One of the simplest guest OS images is a [Debian Linux Cloud]() image. See
+`bashlib.sh:qemu_get_debian_cloud` for steps to create a run image, and
+build the `seed.img` provisioning file from the [Cloud Init]() yaml files. 
+
+Now we are ready to launch the Debian Guest OS in the QEMU emulator. I
+demonstate two similar ways to do this:
+
+1. `bashlib.sh:qemu_run_args`: all the configuration options are passed on the
+   commandline.
+   
+2. `bashlib.sh:qemu_run_cfg`: most of the configuration is defined in a QEMU
+   device configuration file and read using the `-readconfig` option.
+
+These functions work identically but I like the device configuration file
+because it is easier to maintain and can be commented.
+
+Also, both launch functions currently enable [KVM]() for the performance benefit.  To
+disable KVM, and use the default [TCG]() just switch the `kvm` keyword to
+`tcg`.
+
+On first boot the Debian cloud image, will read the [Cloud Init]()
+system and user provisioning information built in `seed.img`. 
+Once provisioned the `seed.img` drive is ignored.  The `seed.img` drive can
+safely be removed in subsequent runs but for simplicity I keep it.
+
+QEMU emulator
+-------------
+Once QEMU is launched it will "boot" the [Debian Linux Cloud]() guest OS. 
+
+When the Debian login prompt comes up, login with the user creds in
+`user-data.yaml`.  Once logged in, enter the 
+[QEMU Monitor](https://qemu-project.gitlab.io/qemu/system/monitor.html) and
+query information about the block devices `(qemu) info block`.  You should see
+two block devices: the guest OS formatted as `qcow2` device and the `seed.img`
+formatted as a `raw` device.
+
+Use `bashlib.sh:qemu_guest_check` to verify some basic functionality.
+
+The guest OS has an SSH server and a pubkey authentication configured in
+`user-data.yaml` `ssh_authorized_keys` for `dave`.  Guest OS ssh access cannot
+be performed from the host yet, only the docker container.
+
+
+Summary
+=======
+This document describes a safe and clean methodology to set up and run the
+[QEMU]() emulator with an example guest OS.  It can serve as a template for
+building more complex QEMU frameworks using heterogenous hardware or prototype
+development on the guest OS.
+
+Two features that I will investigate in the future are:
+
+1. QEMU host volume mapping using virtiofsd (which appears to be in flux at the
+   moment) or [QEMU 9pfs](https://wiki.qemu.org/Documentation/9psetup).
+   
+2. SSH connection from the host directly into the QEMU guest OS.  Currently,
+   SSH access must be from the docker container to the QEMU guest.
+   

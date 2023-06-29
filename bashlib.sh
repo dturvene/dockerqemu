@@ -2,6 +2,7 @@
 # Docker and QEMU management function library.
 # These functions can be run individually from this script library
 # or can be used as examples to run in a shell.
+# 
 # Run this bash script with no arguments to show available functions
 #
 # Docker management functions
@@ -10,24 +11,22 @@
 #  docker_d: destroy $D_IMG
 #
 # These assume inside docker container:
-#  docker_t: confirm program versions in container
+#  docker_check: confirm program versions in container
 #  q_p_bld: configure and make (wrapper for meson) a qemu_system-x86_64 image
 #  q_p_bld_check: verify qemu support, option to run unit test suite
 #  q_p_install: install qemu (location in q_p_bld)
-#  qemu_run_args: launch a qemu VM using commandline args
-#  qemu_run_cfg: launc a qemu VM using (mostly) a configuration file
+#  qemu_get_debian_cloud: wget a Debian distro cloud image and create the
+#   cloud-init seed.img
+#  qemu_run_args: launch a qemu guest OS using commandline args
+#  qemu_run_cfg: launch a qemu guest OS using (mostly) a device configuration file
 #
-# These assume inside qemu guest VM:
-#  qemu_check: verify tools in VM
+# These assume inside qemu guest OS:
+#  qemu_guest_check: verify functionality of the QEMU guest OS
 
-
-# NOTE: A lot of this is boilerplate
-
-dstamp=$(date +%y%m%d)
-tstamp='date +%H%M%S'
+# library function to run if none on command line
 default_func=usage
 
-# script commandline options
+# q_p_bld_check argument to run QEMU runtime tests
 CMD_LONG=""
 
 usage() {
@@ -135,9 +134,9 @@ docker_r()
 {
     echo "$PWD: run D_IMG=$D_IMG using $PWD as /home/work"
     if [ -z $D_IMG ]; then
-	export D_IMG="dockerqemu:latest"
-	echo "No Docker D_IMG, setting to $D_IMG"
+	echo "No Docker D_IMG, use env_vars"
     fi
+    t_prompt
 
     KVM_GROUP=130
 
@@ -170,15 +169,19 @@ docker_conn_shell()
 
 docker_u()
 {
-    echo "update docker image"
+    echo "pattern to update docker image on host, do not run"
+    exit -2
 
-    # get all running containers
+    # process status of all running containers
     docker ps
+    # set the container id for the container from which to
+    # create the new image
     CID=4d573b1640b0
 
     # create a new image from the container id
-    docker commit -m "add qemu build" $CID dockerqemu:latest
+    docker commit -m "update image w changes" $CID dockerqemu:$dstamp
 
+    # display all images, including the new one
     docker images
 }
 
@@ -198,9 +201,13 @@ docker_d()
 }
 
 # confirm versions of necessary packages, esp. meson
-docker_t()
+docker_check()
 {
     in_container
+
+    if [ -z "$Q_TOP" ]; then
+        printf "\nmust run '. ./env_vars' to set environment variables in this shell\n"
+    fi
 
     echo "See qemu.Dockerfile for installed debian packages"
 
@@ -218,7 +225,7 @@ docker_t()
 	$Q_P --version
     else
 	echo "NOT FOUND: Q_P=$Q_P"
-	echo "may need to run q_p_bld "
+	echo "may need to run q_p_bld and/or q_p_install"
     fi
 }
 
@@ -370,7 +377,8 @@ qemu_run_cfg()
     # write console to a log file
     # DBG_LOG="-serial file:${D_WORK}/d11_readcfg.log"
 
-    # 
+    # console starts as bash shell
+    # C-a c toggles between bash and monitor
     MON="-serial mon:stdio -monitor"
 
     # shell on console
@@ -381,7 +389,7 @@ qemu_run_cfg()
 
 }
 
-qemu_check()
+qemu_guest_check()
 {
     # login as dave:dave
 
@@ -394,18 +402,33 @@ qemu_check()
     # ^A-c toggle to monitor and check TCP 10022->22 port fwd
     # (qemu) info usernet
 
+    # check external internet
+    curl www.qemu.org
+    curl https://www.qemu.org
+
+}
+
+qemu_ssh()
+{
     # from host: second docker term and ssh to qemu VM
     ./bashlib.sh docker_conn_shell
+
+    ./bashlib.sh docker_qemu_ssh_conn
 
 }
 
 qemu_mon_cmds()
 {
-    # to quickly end session
-    # qemu> C-a c to toggle monitor
-    # mon> quit
+    echo "VM monitor toggle using C-a c"
 
-    echo "VM monitor"
+    # See block devices
+    info block
+
+    # See network connectivity
+    info network
+
+    # exit QEMU, or C-a x
+    quit
 }
 
 # create a dummy SSH keypair
@@ -466,7 +489,7 @@ bld_all()
     . ./env_vars
 
     # verify necessary execs in container
-    ./bashlib.sh docker_t
+    ./bashlib.sh docker_check
 
     # build qemu
     ./bashlib.sh q_p_bld
@@ -481,9 +504,11 @@ bld_all()
     # recreate debian cloud VM from scratch
     ./bashlib.sh qemu_get_debian_cloud
 
-    ########### container: enter qemu guest ################
-    ./bashlib.sh qemu_run_args
+    # create and enter qemu guest
+    # ./bashlib.sh qemu_run_args
+    ./bashlib.sh qemu_run_cfg
 
+    ########### QEMU guest image #########
     ./bashlib.sh qemu_check
     
 }
