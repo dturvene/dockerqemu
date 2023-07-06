@@ -31,7 +31,7 @@ printf "debian ver:%s\n" $(cat /etc/debian_version)
 printf "hostname:%s\n" $(cat /etc/hostname)
 cat /proc/version
 
-echo "First run ./bashlib.sh docker_t to check configuration"
+echo "First run ./bashlib.sh docker_check to check configuration"
 
 
 

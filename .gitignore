@@ -18,4 +18,6 @@
 
 # unignore git support
 !.gitignore
+!LICENSE
+
 

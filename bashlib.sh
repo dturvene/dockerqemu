@@ -22,6 +22,10 @@
 #
 # These assume inside qemu guest OS:
 #  qemu_guest_check: verify functionality of the QEMU guest OS
+#
+# Procedures:
+#  bld_all: all steps to build and run qemu in docker
+#  restart_all: once docker image and qemu exec are built, steps to restart
 
 # library function to run if none on command line
 default_func=usage
@@ -207,6 +211,7 @@ docker_check()
 
     if [ -z "$Q_TOP" ]; then
         printf "\nmust run '. ./env_vars' to set environment variables in this shell\n"
+	exit -1
     fi
 
     echo "See qemu.Dockerfile for installed debian packages"
@@ -509,10 +514,37 @@ bld_all()
     ./bashlib.sh qemu_run_cfg
 
     ########### QEMU guest image #########
-    ./bashlib.sh qemu_check
-    
+    ./bashlib.sh qemu_guest_check
 }
 
+restart_all()
+{
+    ################## host shell #########################
+
+    # set env for building docker container
+    . ./env_vars
+
+    # make sure set the desired docker image
+    echo $D_IMG
+    docker images
+
+    # start container
+    ./bashlib.sh docker_r
+
+    ##### $D_IMG container #############
+    . ./set_env
+
+    ./bashlib.sh docker_check
+
+    # boot QEMU guest
+    ./bashlib.sh qemu_run_cfg
+
+    ######### QEMU guest ################
+    echo "login dave:dave"
+
+    echo "steps from qemu_guest_check"
+    
+}
 ###########################################
 #  Main processing logic
 ###########################################
