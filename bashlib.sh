@@ -18,10 +18,13 @@
 #  q_p_bld: configure and make (wrapper for meson) a qemu_system-x86_64 image
 #  q_p_bld_check: verify qemu support, option to run unit test suite
 #  q_p_install: install qemu (location in q_p_bld)
-#  qemu_get_debian_cloud: wget a Debian distro cloud image and create the
-#   cloud-init seed.img
+#  get_debian_cloud: wget a Debian distro cloud image and create the
+#  create_seed: cloud-init seed.img from yaml files
 #  qemu_run_args: launch a qemu guest OS using commandline args
 #  qemu_run_cfg: launch a qemu guest OS using (mostly) a device configuration file
+#  qemu_run_virtiofsd: launch virtio filesystem deamon
+#  qemu_run_vfs_args: same a qemu_run_args but adds virtiofsd mapping
+#  qemu_run_vfs_cfg: same a qemu_run_cfg but adds virtiofsd mapping
 #
 # These assume inside qemu guest OS:
 #  qemu_guest_check: verify functionality of the QEMU guest OS
@@ -29,6 +32,7 @@
 # Procedures:
 #  bld_all: all steps to build and run qemu in docker
 #  restart_all: once docker image and qemu exec are built, steps to restart
+#  restart_all_virtiofs: same as restart all but launches virtiofsd
 
 # library function to run if none on command line
 default_func=usage
@@ -341,51 +345,60 @@ q_p_install()
 # See user-data.yaml, metadata.yaml to customize the
 # debian guest image.  Any changes to these files
 # will need to be run on an original cloud image ($DEB_DISTRO)
-qemu_get_debian_cloud()
+get_debian_cloud()
 {
     in_container
+
+    if [ ! -d $Q_ARTIFACTS ]; then
+	echo "run . ./set_env]"
+	exit -1
+    fi
     
     cd $Q_ARTIFACTS
+    echo "$PWD: get $DEB_DISTRO"
+    t_prompt 
     
-    DEB_DISTRO=debian-11-genericcloud-amd64.qcow2
-    DEB_IMG=d11-test.qcow2 
-
     if [ ! -f $DEB_DISTRO ]; then
 	echo "get $DEB_DISTRO"
 	wget https://cloud.debian.org/images/cloud/bullseye/latest/$DEB_DISTRO
+    else
+	echo "local $DEB_DISTRO exists"
     fi
 
     echo "create a local copy that will be modified when a qemu_run function is called"
-    qemu-img convert -f qcow2 -O qcow2 $DEB_DISTRO $DEB_IMG 
+    qemu-img convert -f qcow2 -O qcow2 $DEB_DISTRO $Q_IMG 
 
-    qemu-img info $DEB_IMG
+    qemu-img info $Q_IMG
 
-    # schema command not valid after 7.1
-    # echo "verify config correctness"
-    # cloud-init schema --config-file user-data.yaml
+}
 
-    echo "create seed.img for VM: user-data.yaml, metadata.yaml"
-    cloud-localds -v $Q_ARTIFACTS/seed.img user-data.yaml metadata.yaml
+create_seed()
+{
+    cd $Q_ARTIFACTS
     
-    qemu-img info $Q_ARTIFACTS/seed.img
+    echo "create $Q_SEED for VM: user-data.yaml, metadata.yaml"
+    cloud-localds -v $Q_SEED $D_WORK/user-data.yaml $D_WORK/metadata.yaml
+    
+    qemu-img info $Q_SEED
+
 }
 
 qemu_run_args()
 {
-    echo "Starting QEMU session using commandline args..."
+    echo "$Q_IMG: Starting QEMU session using commandline args..."
 
     NET_Q35="-netdev id=net0,type=user,hostfwd=tcp::10022-:22 -device virtio-net-pci,netdev=net0"
     VGA="-nographic"
     MEM="-m 1G"
 
-    #MACH="-machine q35,accel=kvm,usb=off"
-    # CPU="-cpu host -smp 4,sockets=2,cores=2,threads=1"
-    MACH="-machine q35,usb=off"
+    MACH="-machine q35,accel=kvm,usb=off"
+    CPU="-cpu host -smp 4,sockets=2,cores=2,threads=1"
+    #MACH="-machine q35,usb=off"
     # -cpu host requires accel=kvm
-    CPU="-cpu Broadwell-v4 -smp 4,sockets=2,cores=2,threads=1"
+    #CPU="-cpu Broadwell-v4 -smp 4,sockets=2,cores=2,threads=1"
     
     $Q_P $MACH $CPU $MEM \
-	 -drive file=d11-test.qcow2,if=virtio,format=qcow2 \
+	 -drive file=$Q_IMG,if=virtio,format=qcow2 \
 	 -drive file=$Q_SEED,if=virtio,format=raw \
 	 $NET_Q35 \
 	 $VGA
@@ -432,7 +445,7 @@ qemu_run_virtiofsd()
     pidof $Q_VIRTIOFSD
 }
 
-qemu_run()
+qemu_run_vfs_args()
 {
 
     echo "Starting QEMU session using commandline args..."
@@ -462,6 +475,28 @@ qemu_run()
 
 }
 
+qemu_run_vfs_cfg()
+{
+
+    echo "Starting QEMU session from configuration file..."
+    CFG=d11-guest.cfg
+
+    # $CFG has a [device "video"] section to create a QXL window
+
+    # default connects to x11 server, disable this
+    DISP="-display none"
+    
+    # host directory mapped in qemu_run_virtiofsd
+    VIRTSOCK="-chardev socket,id=char0,path=/tmp/vfsd.sock"
+    VIRTDEV="-device vhost-user-fs-pci,queue-size=1024,chardev=char0,tag=hostdir"
+    MSHARE="-object memory-backend-file,id=mem,size=4G,mem-path=/dev/shm,share=on -numa node,memdev=mem"
+
+    sudo $Q_P -nodefaults -readconfig ${CFG} \
+	 $VIRTSOCK $VIRTDEV $MSHARE \
+	 $DISP -serial mon:stdio
+    
+}
+
 qemu_guest_check()
 {
     # login as dave:dave
@@ -480,8 +515,8 @@ qemu_guest_check()
     curl https://www.qemu.org
 
     # mount host directory
-    sudo mount -t virtiofs hostdir /mnt
-    ls -l /mnt
+    #sudo mount -t virtiofs hostdir /mnt
+    #ls -l /mnt
 }
 
 qemu_ssh()
@@ -551,7 +586,7 @@ bld_all()
     ########### host bash #########
 
     # set env for building docker container
-    . ./env_vars
+    . ./set_env
 
     # create docker image
     ./bashlib.sh docker_c
@@ -562,7 +597,7 @@ bld_all()
     ########### docker container #########
 
     # set env for building/running qemu
-    . ./env_vars
+    . ./set_env
 
     # verify necessary execs in container
     ./bashlib.sh docker_check
@@ -593,7 +628,7 @@ restart_all()
     ################## host shell #########################
 
     # set env for building docker container
-    . ./env_vars
+    . ./set_env
 
     # make sure set the desired docker image
     echo $D_IMG
@@ -614,8 +649,40 @@ restart_all()
     echo "login dave:dave"
 
     echo "steps from qemu_guest_check"
-    
 }
+
+restart_all_virtiofs()
+{
+    ################## host shell #########################
+
+    # set env for building docker container
+    . ./set_env
+
+    # make sure set the desired docker image
+    echo $D_IMG
+    docker images
+
+    # start container
+    ./bashlib.sh docker_r
+
+    ##### $D_IMG container #############
+    . ./set_env
+
+    ./bashlib.sh docker_check
+
+    # start virtio file system daemon
+    ./bashlib.sh qemu_run_virtiofsd
+
+    # qemu using config file and mapping virtio filesystem
+    ./bashlib.sh qemu_run_vfs_cfg
+
+    ######### QEMU guest ################
+    echo "login dave:dave"
+
+    echo "steps from qemu_guest_check"
+}
+
+
 ###########################################
 #  Main processing logic
 ###########################################

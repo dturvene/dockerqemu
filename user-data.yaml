@@ -1,6 +1,6 @@
+#cloud-config
 # SPDX-License-Identifier: MIT
 # SPDX-FileCopyrightText: 2023 David Turvene <dturvene at gmail>
-# cloud-config
 #  https://cloudinit.readthedocs.io/en/20.2/topics/examples.html
 #
 

@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: MIT
 # SPDX-FileCopyrightText: 2023 David Turvene <dturvene at gmail>
+# cloud-init instance data
+# https://cloudinit.readthedocs.io/en/20.2/topics/instancedata.html
 
 instance-id: d11-local01
 local-hostname: d11-qemu-v1
