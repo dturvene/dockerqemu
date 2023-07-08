@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2023 David Turvene <dturvene at gmail>
+# 
 # Docker and QEMU management function library.
 # These functions can be run individually from this script library
 # or can be used as examples to run in a shell.
@@ -144,20 +147,26 @@ docker_r()
 
     KVM_GROUP=130
 
-    # mount the local drive as /home/work
-    # mount the host qemu git clone
+    # mount
+    #  * local git repo
+    #  * QEMU artifacts
+    #  * host qemu source git clone
     #  --device: map the host /dev/kvm device
     #  --group-add: add the host KVM group to user
     #  --workdir: the current directory with this script
     #  --rm: remove container on exit
     #  -i: interactive, keep STDIN open
     #  -t: allocate a psuedo-tty
+    #  --device=/dev/shm must have --privileged
     docker run \
 	   --volume="$PWD:/home/work" \
+	   --volume="$HOME/Stage/QEMU:$Q_ARTIFACTS" \
 	   --volume="/opt/distros/qemu.git:/home/qemu.git" \
+	   --volume="/dev/shm:/dev/shm"	\
+	   --shm-size=1g \
+	   --workdir=/home/work \
 	   --device=/dev/kvm \
 	   --group-add $KVM_GROUP \
-	   --workdir=/home/work \
 	   --rm -it $D_IMG
 
 }
@@ -171,18 +180,22 @@ docker_conn_shell()
     docker exec -it $CID bash
 }
 
+# pattern to update docker image after changes in container
+# this is a shortcut to avoid running bld_all
+# NOTE: update qemu.Dockerfile with local changes
 docker_u()
 {
-    echo "pattern to update docker image on host, do not run"
+
+    echo "example, run manually with desired CID"
     exit -2
 
     # process status of all running containers
     docker ps
-    # set the container id for the container from which to
-    # create the new image
+    # set the container id to create the new image
     CID=4d573b1640b0
 
-    # create a new image from the container id
+    # create a new image from the container id using YYMMDD as the image tag
+    # update set_env to use new container tag
     docker commit -m "update image w changes" $CID dockerqemu:$dstamp
 
     # display all images, including the new one
@@ -232,6 +245,12 @@ docker_check()
 	echo "NOT FOUND: Q_P=$Q_P"
 	echo "may need to run q_p_bld and/or q_p_install"
     fi
+
+    echo "CHECK shared memory"
+    df -h /dev/shm
+    ipcs -pm
+    # sudo mount -o remount,size=512m /dev/shm
+    # df -h /dev/shm
 }
 
 # https://www.qemu.org/download/
@@ -326,7 +345,7 @@ qemu_get_debian_cloud()
 {
     in_container
     
-    cd /home/work
+    cd $Q_ARTIFACTS
     
     DEB_DISTRO=debian-11-genericcloud-amd64.qcow2
     DEB_IMG=d11-test.qcow2 
@@ -346,9 +365,9 @@ qemu_get_debian_cloud()
     # cloud-init schema --config-file user-data.yaml
 
     echo "create seed.img for VM: user-data.yaml, metadata.yaml"
-    cloud-localds seed.img user-data.yaml metadata.yaml
+    cloud-localds -v $Q_ARTIFACTS/seed.img user-data.yaml metadata.yaml
     
-    qemu-img info seed.img   
+    qemu-img info $Q_ARTIFACTS/seed.img
 }
 
 qemu_run_args()
@@ -357,13 +376,17 @@ qemu_run_args()
 
     NET_Q35="-netdev id=net0,type=user,hostfwd=tcp::10022-:22 -device virtio-net-pci,netdev=net0"
     VGA="-nographic"
-    MACH="-machine q35,accel=kvm,usb=off"
     MEM="-m 1G"
-    CPU="-cpu host -smp 4,sockets=2,cores=2,threads=1"
+
+    #MACH="-machine q35,accel=kvm,usb=off"
+    # CPU="-cpu host -smp 4,sockets=2,cores=2,threads=1"
+    MACH="-machine q35,usb=off"
+    # -cpu host requires accel=kvm
+    CPU="-cpu Broadwell-v4 -smp 4,sockets=2,cores=2,threads=1"
     
     $Q_P $MACH $CPU $MEM \
 	 -drive file=d11-test.qcow2,if=virtio,format=qcow2 \
-	 -drive file=seed.img,if=virtio,format=raw \
+	 -drive file=$Q_SEED,if=virtio,format=raw \
 	 $NET_Q35 \
 	 $VGA
 
@@ -394,6 +417,51 @@ qemu_run_cfg()
 
 }
 
+# https://gitlab.com/virtio-fs/virtiofsd#examples
+qemu_run_virtiofsd()
+{
+    in_container
+
+    cd $D_WORK
+    
+    # --inode-file-handles : Filesystem does not support file handles
+    sudo $Q_ARTIFACTS/$Q_VIRTIOFSD --socket-path=/tmp/vfsd.sock --shared-dir . --sandbox chroot &
+
+    sleep 0.2
+    echo "Checking $Q_VIRTIOFSD pid"
+    pidof $Q_VIRTIOFSD
+}
+
+qemu_run()
+{
+
+    echo "Starting QEMU session using commandline args..."
+
+    NET_Q35="-netdev id=net0,type=user,hostfwd=tcp::10022-:22 -device virtio-net-pci,netdev=net0"
+    VGA="-nographic"
+    MEM="-m 4G"
+    MACH="-machine q35,accel=kvm,usb=off"
+    # -cpu host requires accel=kvm
+    CPU="-cpu host -smp 4,sockets=2,cores=2,threads=1"	
+    #MACH="-machine q35"
+    #CPU="-cpu Broadwell-v4 -smp 4,sockets=2,cores=2,threads=1"
+
+    # host directory mapped in qemu_run_virtiofsd
+    VIRTSOCK="-chardev socket,id=char0,path=/tmp/vfsd.sock"
+    VIRTDEV="-device vhost-user-fs-pci,queue-size=1024,chardev=char0,tag=hostdir"
+    MSHARE="-object memory-backend-file,id=mem,size=4G,mem-path=/dev/shm,share=on -numa node,memdev=mem"
+    # qemu-system-x86_64: total memory for NUMA nodes (0x20000000) should equal RAM size (0x100000000)
+
+    # need to use sudo for VIRTSOCK permission
+    sudo $Q_P $MACH $CPU $MEM \
+	 -drive file=$Q_IMG,if=virtio,format=qcow2 \
+	 -drive file=$Q_SEED,if=virtio,format=raw \
+	 $VIRTSOCK $VIRTDEV $MSHARE \
+	 $NET_Q35 \
+	 $VGA
+
+}
+
 qemu_guest_check()
 {
     # login as dave:dave
@@ -411,6 +479,9 @@ qemu_guest_check()
     curl www.qemu.org
     curl https://www.qemu.org
 
+    # mount host directory
+    sudo mount -t virtiofs hostdir /mnt
+    ls -l /mnt
 }
 
 qemu_ssh()

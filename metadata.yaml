@@ -1,2 +1,5 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2023 David Turvene <dturvene at gmail>
+
 instance-id: d11-local01
 local-hostname: d11-qemu-v1

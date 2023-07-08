@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MIT
+# SPDX-FileCopyrightText: 2023 David Turvene <dturvene at gmail>
 # Container for building and running qemu
 # Note: libgtk-3-dev includes glib-2.0
 
@@ -22,6 +24,7 @@ RUN apt-get update --fix-missing && \
     	    apt-utils \
 	    ${PYTHON} \
 	    ${PYTHON}-pip \
+	    vim \
 	    time \
 	    wget ssh \
 	    cloud-image-utils cloud-init \
@@ -52,13 +55,8 @@ RUN ${PIP} install meson sphinx sphinx_rtd_theme
 USER ${USER}
 
 # overwrite the default .bashrc with our custom one
-COPY bashrc.docker /home/${USER}/.bashrc
-
-# add local python packages to path
-#ENV PATH=/home/${USER}/.local/bin:$PATH
-
-# override PS1 in local .bashrc
-#RUN echo 'export PS1="\u:\!> "' >> /home/user1/.bashrc
+# and set ownership
+COPY --chown=${USER} bashrc.docker /home/${USER}/.bashrc
 
 
 

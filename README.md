@@ -1,4 +1,7 @@
 <!--
+SPDX-FileCopyrightText: 2023 David Turvene <dturvene at gmail>
+SPDX-License-Identifier: CC-BY-SA-4.0
+
 Create a local html for proof, format and hyperlink review
 host> pandoc --metadata pagetitle=docker-qemu -f markdown -s README.md -o README.html
 -->
