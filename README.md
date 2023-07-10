@@ -11,14 +11,15 @@ host> pandoc --metadata pagetitle=docker-qemu -f markdown -s README.md -o README
 I have added support for 
 [virtiofsd](https://gitlab.com/virtio-fs/virtiofsd) shared files from the host, 
 mapped as a docker volume and then mounted in the QEMU guest.  It works well
-but there several small issues to overcome:
+but there were several small issues to overcome:
 
-* understanding how to map `/dev/shm` through docker and then into qemu,
+* understanding how to map `/dev/shm` through docker and then into QEMU,
 * configuring the virtio deamon in docker,
-* configuring qemu to access the virtio deamon in docker.
+* configuring QEMU to access the virtio deamon in docker.
 
-It seems to work reliably now though I noticed a qemu guest kernel panic after
-running for roughly 11 hours.
+It seems to work reliably now. See this 
+[Docker QEMU](https://github.com/dturvene/dockerqemu) github repo
+and tag `v1.1`
 
 Abstract
 ========

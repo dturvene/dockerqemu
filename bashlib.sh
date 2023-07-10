@@ -617,7 +617,7 @@ bld_all()
     ./bashlib.sh q_p_install
 
     # recreate debian cloud VM from scratch
-    ./bashlib.sh qemu_get_debian_cloud
+    ./bashlib.sh get_debian_cloud
 
     # create and enter qemu guest
     # ./bashlib.sh qemu_run_args
