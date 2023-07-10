@@ -6,6 +6,20 @@ Create a local html for proof, format and hyperlink review
 host> pandoc --metadata pagetitle=docker-qemu -f markdown -s README.md -o README.html
 -->
 
+230708 Update
+=============
+I have added support for 
+[virtiofsd](https://gitlab.com/virtio-fs/virtiofsd) shared files from the host, 
+mapped as a docker volume and then mounted in the QEMU guest.  It works well
+but there several small issues to overcome:
+
+* understanding how to map `/dev/shm` through docker and then into qemu,
+* configuring the virtio deamon in docker,
+* configuring qemu to access the virtio deamon in docker.
+
+It seems to work reliably now though I noticed a qemu guest kernel panic after
+running for roughly 11 hours.
+
 Abstract
 ========
 I work on [QEMU](https://www.qemu.org/) a good bit, mostly full system
@@ -210,13 +224,8 @@ QEMU emulator with an example guest OS.  It can serve as a template for
 building more complex QEMU frameworks using heterogenous hardware or prototype
 development on the guest OS.
 
-Two features that I will investigate in the future are:
+Features that I will investigate in the future are:
 
-1. QEMU host volume mapping using
-   [virtiofsd](https://gitlab.com/virtio-fs/virtiofsd) 
-   (which appears to be moving to rust at the moment) or 
-   [QEMU 9pfs](https://wiki.qemu.org/Documentation/9psetup).
-   
-2. SSH connection from the host directly into the QEMU guest OS.  Currently,
+1. SSH connection from the host directly into the QEMU guest OS.  Currently,
    SSH access must be from the docker container to the QEMU guest.
    

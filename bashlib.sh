@@ -22,7 +22,7 @@
 #  create_seed: cloud-init seed.img from yaml files
 #  qemu_run_args: launch a qemu guest OS using commandline args
 #  qemu_run_cfg: launch a qemu guest OS using (mostly) a device configuration file
-#  qemu_run_virtiofsd: launch virtio filesystem deamon
+#  run_virtiofsd: launch virtio filesystem deamon
 #  qemu_run_vfs_args: same a qemu_run_args but adds virtiofsd mapping
 #  qemu_run_vfs_cfg: same a qemu_run_cfg but adds virtiofsd mapping
 #
@@ -43,7 +43,7 @@ CMD_LONG=""
 usage() {
 
     if [ -z "$Q_TOP" ]; then
-        printf "\nmust run '. ./env_vars' to set environment variables in this shell\n"
+        printf "\nmust run '. ./set_env' to set environment variables in this shell\n"
     fi
 
     printf "\nUsage: $0 [options] func [func]+"
@@ -145,33 +145,33 @@ docker_r()
 {
     echo "$PWD: run D_IMG=$D_IMG using $PWD as /home/work"
     if [ -z $D_IMG ]; then
-	echo "No Docker D_IMG, use env_vars"
+	echo "No Docker D_IMG, use set_env"
     fi
     t_prompt
 
     KVM_GROUP=130
 
-    # mount
+    # map volumes:
     #  * local git repo
     #  * QEMU artifacts
     #  * host qemu source git clone
+    #  * shared memory device (default 64M, see docker inspect)
     #  --device: map the host /dev/kvm device
     #  --group-add: add the host KVM group to user
     #  --workdir: the current directory with this script
+    #  --name: set the container name (otherwise will be assigned)
     #  --rm: remove container on exit
     #  -i: interactive, keep STDIN open
     #  -t: allocate a psuedo-tty
-    #  --device=/dev/shm must have --privileged
     docker run \
 	   --volume="$PWD:/home/work" \
 	   --volume="$HOME/Stage/QEMU:$Q_ARTIFACTS" \
 	   --volume="/opt/distros/qemu.git:/home/qemu.git" \
 	   --volume="/dev/shm:/dev/shm"	\
-	   --shm-size=1g \
 	   --workdir=/home/work \
 	   --device=/dev/kvm \
 	   --group-add $KVM_GROUP \
-	   --rm -it $D_IMG
+	   --name $D_NAME --rm -it $D_IMG
 
 }
 
@@ -184,23 +184,27 @@ docker_conn_shell()
     docker exec -it $CID bash
 }
 
+# inspect docker images and containers
+docker_i()
+{
+    echo "check shared memory size in running container"
+    docker inspect $D_NAME | grep -in ShmSize
+
+    echo "inspect image $D_IMG"
+    docker inspect $D_IMG
+}
+
 # pattern to update docker image after changes in container
 # this is a shortcut to avoid running bld_all
 # NOTE: update qemu.Dockerfile with local changes
 docker_u()
 {
-
-    echo "example, run manually with desired CID"
-    exit -2
-
     # process status of all running containers
     docker ps
-    # set the container id to create the new image
-    CID=4d573b1640b0
 
     # create a new image from the container id using YYMMDD as the image tag
     # update set_env to use new container tag
-    docker commit -m "update image w changes" $CID dockerqemu:$dstamp
+    docker commit -m "update image w changes" $D_NAME dockerqemu:$dstamp
 
     # display all images, including the new one
     docker images
@@ -227,7 +231,7 @@ docker_check()
     in_container
 
     if [ -z "$Q_TOP" ]; then
-        printf "\nmust run '. ./env_vars' to set environment variables in this shell\n"
+        printf "\nmust run '. ./set_env' to set environment variables in this shell\n"
 	exit -1
     fi
 
@@ -410,8 +414,6 @@ qemu_run_cfg()
     echo "Starting QEMU session from configuration file..."
     CFG=d11-guest.cfg
 
-    # $CFG has a [device "video"] section to create a QXL window
-
     # default connects to x11 server, disable this
     DISP="-display none"
 
@@ -431,7 +433,7 @@ qemu_run_cfg()
 }
 
 # https://gitlab.com/virtio-fs/virtiofsd#examples
-qemu_run_virtiofsd()
+run_virtiofsd()
 {
     in_container
 
@@ -481,14 +483,13 @@ qemu_run_vfs_cfg()
     echo "Starting QEMU session from configuration file..."
     CFG=d11-guest.cfg
 
-    # $CFG has a [device "video"] section to create a QXL window
-
     # default connects to x11 server, disable this
     DISP="-display none"
     
     # host directory mapped in qemu_run_virtiofsd
     VIRTSOCK="-chardev socket,id=char0,path=/tmp/vfsd.sock"
     VIRTDEV="-device vhost-user-fs-pci,queue-size=1024,chardev=char0,tag=hostdir"
+    # mem size must be the same as [memory] in the $CFG file
     MSHARE="-object memory-backend-file,id=mem,size=4G,mem-path=/dev/shm,share=on -numa node,memdev=mem"
 
     sudo $Q_P -nodefaults -readconfig ${CFG} \
@@ -500,6 +501,12 @@ qemu_run_vfs_cfg()
 qemu_guest_check()
 {
     # login as dave:dave
+
+    # df -h /dev/shm
+    # mount host directory
+    # mkdir ./work
+    # sudo mount -t virtiofs hostdir ./work
+    # ls -l ~/work
 
     # check sshd is running
     ps -aux | grep ssh
@@ -514,9 +521,6 @@ qemu_guest_check()
     curl www.qemu.org
     curl https://www.qemu.org
 
-    # mount host directory
-    #sudo mount -t virtiofs hostdir /mnt
-    #ls -l /mnt
 }
 
 qemu_ssh()

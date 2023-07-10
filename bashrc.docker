@@ -31,8 +31,15 @@ printf "debian ver:%s\n" $(cat /etc/debian_version)
 printf "hostname:%s\n" $(cat /etc/hostname)
 cat /proc/version
 
-echo ". ./env_vars; ./bashlib.sh docker_check"
-echo "to check configuration"
+mount_vfs() {
+    echo "mounting hostdir on $HOME/work"
+    mkdir -p $HOME/work
+    sudo mount -t virtiofs hostdir $HOME/work
+}
+
+echo "CHECK CONFIGURATION"
+echo ". ./set_env; ./bashlib.sh docker_check"
+
 
 
 
